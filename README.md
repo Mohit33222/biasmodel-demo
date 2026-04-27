@@ -4,6 +4,7 @@
 > Uses Gemini API for all pipeline stages.
 
 🔗 **Live:** [biasmodel-demo.vercel.app](https://biasmodel-demo.vercel.app) *(update after deploy)*  
+📦 **Demo repo:** [github.com/Mohit33222/biasmodel-demo](https://github.com/Mohit33222/biasmodel-demo)  
 📦 **Full project:** [github.com/SayanSantra-t/unbaised_AI](https://github.com/SayanSantra-t/unbaised_AI)
 
 ---
@@ -15,7 +16,7 @@
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
 1. Go to [render.com](https://render.com) → New Web Service
-2. Connect this repo, set **Root Directory** to `backend`
+2. Connect **github.com/Mohit33222/biasmodel-demo**, set **Root Directory** to `backend`
 3. Add env var: `GEMINI_API_KEY = your_key`
 4. Deploy — Render gives you a URL like `https://biasmodel-demo-api.onrender.com`
 
