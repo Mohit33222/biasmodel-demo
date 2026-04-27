@@ -267,7 +267,7 @@ function App() {
     valid.forEach(f => fd.append('files', f));
     setIsUploading(true);
     try {
-      const res = await fetch('${API}/extract-cvs', { method: 'POST', body: fd });
+      const res = await fetch(`${API}/extract-cvs`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const extracted = await res.json();
       setCvList(prev => {
