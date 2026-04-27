@@ -1,14 +1,17 @@
 """
 BiasModel v2.5 — DEMO BACKEND (Gemini-only, no local model required)
-All pipeline stages use Gemini API — instantly deployable on Render/Railway.
+All pipeline stages use Gemini API — instantly deployable on Vercel / Render.
+Memory: lightweight in-memory store (no ChromaDB needed for demo).
 """
 import os
 import re
 import io
 import csv
 import json
+import time
 import uuid
 import asyncio
+from collections import deque
 from typing import List
 from dotenv import load_dotenv
 
@@ -19,8 +22,6 @@ from sse_starlette.sse import EventSourceResponse
 from ddgs import DDGS
 import pdfplumber
 from docx import Document
-import chromadb
-from chromadb.utils import embedding_functions
 
 load_dotenv()
 app = FastAPI(title="BiasModel v2.5 Demo")
@@ -36,86 +37,58 @@ app.add_middleware(
 # ── ALL AI via Gemini (no Jan AI / local model needed) ────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is required. Set it in your .env or Render/Vercel env vars.")
+    raise RuntimeError("GEMINI_API_KEY is required. Set it in your .env or Vercel/Render env vars.")
 
 gemini = AsyncOpenAI(
     api_key=GEMINI_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-PREDICTOR_MODEL  = "gemini-2.0-flash"        # Fast + cheap for prediction
-AUDITOR_MODEL    = "gemini-2.0-flash"         # Fast + cheap for auditing
-META_MODEL       = "gemini-2.0-flash"         # Fast + cheap for meta-audit
-SUPREME_MODEL    = "gemini-2.5-flash"         # Best quality for final fallback
+PREDICTOR_MODEL = "gemini-2.0-flash"
+AUDITOR_MODEL   = "gemini-2.0-flash"
+META_MODEL      = "gemini-2.0-flash"
+SUPREME_MODEL   = "gemini-2.5-flash"
 
-# ── ChromaDB Memory (CPU-based, disk-persistent) ──────────────────────────────
-MEMORY_MAX = 300
-chroma  = chromadb.PersistentClient(path="./agent_memory")
-emb_fn  = embedding_functions.DefaultEmbeddingFunction()
+# ── Lightweight in-memory agent memory (replaces ChromaDB for demo) ───────────
+MEMORY_MAX = 50
 
-predictor_mem = chroma.get_or_create_collection("predictor_mistakes",  embedding_function=emb_fn)
-auditor_mem   = chroma.get_or_create_collection("auditor_misses",      embedding_function=emb_fn)
-meta_mem      = chroma.get_or_create_collection("meta_logic_failures", embedding_function=emb_fn)
-success_cache = chroma.get_or_create_collection("success_cache",       embedding_function=emb_fn)
+class MemoryStore:
+    """Simple in-memory lesson store — keeps the most recent N entries."""
+    def __init__(self, maxlen=MEMORY_MAX):
+        self._store: deque = deque(maxlen=maxlen)
 
-# ── Memory helpers ────────────────────────────────────────────────────────────
+    def add(self, lesson: str):
+        self._store.append({"text": lesson, "ts": time.time()})
 
-def _trim(collection, max_size=MEMORY_MAX):
-    try:
-        count = collection.count()
-        if count <= max_size:
-            return
-        all_data = collection.get(include=["metadatas"])
-        ids_ts = [(i, m.get("ts", 0)) for i, m in zip(all_data["ids"], all_data["metadatas"])]
-        ids_ts.sort(key=lambda x: x[1])
-        collection.delete(ids=[i for i, _ in ids_ts[:count - max_size]])
-    except Exception as e:
-        print(f"Trim error: {e}")
-
-def get_memory(collection, query, n=2):
-    try:
-        count = collection.count()
-        if count == 0:
+    def recall(self, n=2) -> str:
+        if not self._store:
             return ""
-        results = collection.query(query_texts=[query], n_results=min(n, count))
-        if results["documents"] and results["documents"][0]:
-            return "\n### PAST LESSONS:\n" + "\n".join(f"- {d}" for d in results["documents"][0]) + "\n"
-    except Exception as e:
-        print(f"Memory read error: {e}")
-    return ""
+        recent = list(self._store)[-n:]
+        return "\n### PAST LESSONS:\n" + "\n".join(f"- {e['text']}" for e in recent) + "\n"
 
-def save_memory(collection, query, lesson):
-    try:
-        collection.add(
-            documents=[lesson],
-            ids=[str(uuid.uuid4())],
-            metadatas=[{"context": query[:100], "ts": asyncio.get_event_loop().time()}]
-        )
-        _trim(collection)
-    except Exception as e:
-        print(f"Memory write error: {e}")
+class CacheStore:
+    """Simple similarity cache — exact substring match for demo purposes."""
+    def __init__(self, maxlen=MEMORY_MAX):
+        self._store: deque = deque(maxlen=maxlen)
 
-def check_cache(text):
-    try:
-        if success_cache.count() == 0:
-            return None
-        r = success_cache.query(query_texts=[text], n_results=1)
-        if r["distances"] and r["distances"][0] and r["distances"][0][0] < 0.05:
-            return r["metadatas"][0][0].get("output")
-    except Exception:
-        pass
-    return None
+    def check(self, text: str):
+        for entry in self._store:
+            # Simple overlap: if 80%+ of words match consider it a hit
+            words_q = set(text.lower().split())
+            words_e = set(entry["key"].lower().split())
+            if words_q and words_e:
+                overlap = len(words_q & words_e) / max(len(words_q), len(words_e))
+                if overlap > 0.85:
+                    return entry["output"]
+        return None
 
-def save_cache(text, output):
-    try:
-        success_cache.add(
-            documents=[text],
-            ids=[str(uuid.uuid4())],
-            metadatas=[{"output": output[:2000], "ts": asyncio.get_event_loop().time()}]
-        )
-        _trim(success_cache)
-    except Exception:
-        pass
+    def save(self, text: str, output: str):
+        self._store.append({"key": text[:500], "output": output})
+
+predictor_mem = MemoryStore()
+auditor_mem   = MemoryStore()
+meta_mem      = MemoryStore()
+success_cache = CacheStore()
 
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
@@ -165,7 +138,7 @@ async def pipeline(
     use_search_bool = use_search.lower() == "true"
 
     # Cache check
-    cached = await asyncio.to_thread(check_cache, input_data)
+    cached = success_cache.check(input_data)
     if cached:
         yield {"event": "status",       "data": "Cache hit — returning stored result instantly."}
         yield {"event": "final_result", "data": cached}
@@ -193,7 +166,7 @@ async def pipeline(
 
         # 1. Predictor
         yield {"event": "predictor_start", "data": "Predictor (Gemini Flash) thinking..."}
-        mem = await asyncio.to_thread(get_memory, predictor_mem, input_data)
+        mem = predictor_mem.recall()
         sys_p = f"{system_prompt or f'Expert {task_type} assistant.'}\nCriteria: {criteria}\n{mem}"
         raw_out, err = await call_gemini(PREDICTOR_MODEL, sys_p,
             f"Input: {input_data[:15000]}\nContext: {rag[:2000]}\nGenerate neutral, objective response.")
@@ -204,7 +177,7 @@ async def pipeline(
 
         # 2. Local Auditor
         yield {"event": "audit_start", "data": "Auditor checking for bias..."}
-        aud_mem = await asyncio.to_thread(get_memory, auditor_mem, raw_out)
+        aud_mem = auditor_mem.recall()
         a_sys = (
             f"Fairness Auditor. Only flag EXPLICIT bias. {aud_mem}\n"
             "Respond ONLY JSON: {\"is_biased\": bool, \"reason\": str, \"score\": int}"
@@ -214,20 +187,19 @@ async def pipeline(
         yield {"event": "audit_end", "data": {**a_data, "source": "Gemini Flash", "thoughts": ""}}
 
         if a_data.get("is_biased"):
-            await asyncio.to_thread(save_memory, predictor_mem, input_data,
-                f"Failed: {a_data.get('reason', 'bias')}")
+            predictor_mem.add(f"Failed: {a_data.get('reason', 'bias')}")
             yield {"event": "penalty", "data": {"reason": a_data.get("reason", "bias detected")}}
             continue
 
         # 3. Meta-Auditor (skippable)
         if skip_meta_bool:
             yield {"event": "meta_skipped", "data": "Meta-Auditor skipped — Speed Mode."}
-            await asyncio.to_thread(save_cache, input_data, raw_out)
+            success_cache.save(input_data, raw_out)
             yield {"event": "final_result", "data": raw_out}
             return
 
         yield {"event": "meta_start", "data": "Meta-Auditor verifying..."}
-        m_mem = await asyncio.to_thread(get_memory, meta_mem, a_raw)
+        m_mem = meta_mem.recall()
         m_raw, _ = await call_gemini(META_MODEL,
             f"Meta-Auditor. {m_mem}\nRespond ONLY 'VALID' or 'INVALID'.",
             f"Review this audit:\n{a_raw}")
@@ -235,29 +207,27 @@ async def pipeline(
         yield {"event": "meta_end", "data": {"is_valid": is_valid, "thoughts": ""}}
 
         if is_valid:
-            await asyncio.to_thread(save_cache, input_data, raw_out)
+            success_cache.save(input_data, raw_out)
             yield {"event": "final_result", "data": raw_out}
             return
         else:
-            await asyncio.to_thread(save_memory, meta_mem, a_raw,
-                f"Invalidated: {a_data.get('reason', 'unknown')}")
+            meta_mem.add(f"Invalidated: {a_data.get('reason', 'unknown')}")
             yield {"event": "penalty", "data": {"reason": "Meta-Auditor rejected audit"}}
 
     # Supreme fallback
     yield {"event": "status", "data": f"Invoking Supreme Auditor ({SUPREME_MODEL})..."}
-    s_sys = f"Supreme Fairness Auditor. Respond ONLY JSON: {{\"is_biased\": bool, \"reason\": str, \"score\": int}}"
+    s_sys = "Supreme Fairness Auditor. Respond ONLY JSON: {\"is_biased\": bool, \"reason\": str, \"score\": int}"
     s_raw, _ = await call_gemini(SUPREME_MODEL, s_sys,
         f"Audit for bias ({sensitive_attrs}) in {task_type}:\n{raw_out}", temperature=0.1)
     supreme = clean_json(s_raw) or {"is_biased": True, "reason": "Supreme audit parse error", "score": 10}
 
     if supreme.get("is_biased"):
-        await asyncio.to_thread(save_memory, auditor_mem, raw_out,
-            f"Missed: {supreme.get('reason', 'unknown')}")
+        auditor_mem.add(f"Missed: {supreme.get('reason', 'unknown')}")
         yield {"event": "audit_end",   "data": {**supreme, "source": "Supreme (Gemini 2.5)", "thoughts": ""}}
         yield {"event": "error",       "data": f"Blocked by Supreme Auditor: {supreme.get('reason')}"}
     else:
         yield {"event": "audit_end",   "data": {**supreme, "source": "Supreme (Gemini 2.5)", "thoughts": ""}}
-        await asyncio.to_thread(save_cache, input_data, raw_out)
+        success_cache.save(input_data, raw_out)
         yield {"event": "final_result", "data": raw_out}
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -287,8 +257,7 @@ def parse_tsv(raw, filename):
                 if not text:
                     continue
                 role = row.get("Role", "").strip()
-                ctx = f"Role: {role}\n{text}"
-                out.append({"filename": f"{role or f'Record {i+1}'} — row {i+1}", "text": ctx})
+                out.append({"filename": f"{role or f'Record {i+1}'} — row {i+1}", "text": f"Role: {role}\n{text}"})
             if out:
                 return out
     except Exception:
@@ -315,14 +284,14 @@ async def extract_cvs(files: List[UploadFile] = File(...)):
                 rows = parse_tsv(raw, f.filename)
                 results.extend(rows) if rows else results.append({"filename": f.filename, "text": raw})
             else:
-                results.append({"filename": f.filename, "text": "[Unsupported]"})
+                results.append({"filename": f.filename, "text": "[Unsupported format]"})
         except Exception as e:
             results.append({"filename": f.filename, "text": f"[Error: {e}]"})
     return results
 
 @app.get("/")
 async def health():
-    return {"status": "BiasModel v2.5 Demo API running", "models": {
+    return {"status": "BiasModel v2.5 Demo API — online", "models": {
         "predictor": PREDICTOR_MODEL, "auditor": AUDITOR_MODEL,
         "meta": META_MODEL, "supreme": SUPREME_MODEL
     }}
