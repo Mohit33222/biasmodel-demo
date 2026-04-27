@@ -44,9 +44,9 @@ gemini = AsyncOpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-PREDICTOR_MODEL = "gemini-2.0-flash"
-AUDITOR_MODEL   = "gemini-2.0-flash"
-META_MODEL      = "gemini-2.0-flash"
+PREDICTOR_MODEL = "gemini-2.5-flash"
+AUDITOR_MODEL   = "gemini-2.5-flash"
+META_MODEL      = "gemini-2.5-flash"
 SUPREME_MODEL   = "gemini-2.5-flash"
 
 # ── Lightweight in-memory agent memory (replaces ChromaDB for demo) ───────────
@@ -92,16 +92,27 @@ success_cache = CacheStore()
 
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
-async def call_gemini(model, system, user, temperature=0.3):
-    try:
-        resp = await gemini.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            temperature=temperature
-        )
-        return resp.choices[0].message.content, ""
-    except Exception as e:
-        return None, str(e)
+async def call_gemini(model, system, user, temperature=0.3, _retries=2):
+    for attempt in range(_retries + 1):
+        try:
+            resp = await gemini.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=temperature
+            )
+            return resp.choices[0].message.content, ""
+        except Exception as e:
+            err = str(e)
+            # Auto-retry on 429 rate limit — parse retry delay from error message
+            if "429" in err and attempt < _retries:
+                import re as _re
+                delay_match = _re.search(r"retry.*?(\d+)", err, _re.IGNORECASE)
+                delay = int(delay_match.group(1)) if delay_match else 15
+                delay = min(delay, 60)  # cap at 60s
+                print(f"Rate limited — waiting {delay}s then retrying ({attempt+1}/{_retries})...")
+                await asyncio.sleep(delay)
+                continue
+            return None, err
 
 def clean_json(text):
     if not text:
