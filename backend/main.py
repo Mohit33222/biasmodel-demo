@@ -44,9 +44,9 @@ gemini = AsyncOpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-PREDICTOR_MODEL = "gemini-2.0-flash-lite"   # fast + generous free tier
-AUDITOR_MODEL   = "gemini-2.0-flash-lite"   # fast + generous free tier
-META_MODEL      = "gemini-2.0-flash-lite"   # fast + generous free tier
+PREDICTOR_MODEL = "gemini-3.1-flash-lite-preview"
+AUDITOR_MODEL   = "gemini-3.1-flash-lite-preview"
+META_MODEL      = "gemini-3.1-flash-lite-preview"
 SUPREME_MODEL   = "gemini-2.5-flash"        # best quality — only fires if all 3 retries fail
 
 # ── Lightweight in-memory agent memory (replaces ChromaDB for demo) ───────────
