@@ -1,32 +1,32 @@
-﻿# BiasModel v2.5 â€” Live Demo
+# BiasModel v2.5 — Live Demo
 
-> **Instantly deployable demo** â€” no local GPU or Jan AI required.  
+> **Instantly deployable demo** — no local GPU or Jan AI required.  
 > Uses Gemini API for all pipeline stages.
 
-ðŸ”— **Live:** [biasmodel-demo.vercel.app](https://biasmodel-demo.vercel.app)  
-ðŸ“¦ **Demo repo:** [github.com/Mohit33222/biasmodel-demo](https://github.com/Mohit33222/biasmodel-demo)  
-ðŸ“¦ **Full project:** [github.com/SayanSantra-t/unbaised_AI](https://github.com/SayanSantra-t/unbaised_AI)
+🔗 **Live:** [biasmodel-demo.vercel.app](https://biasmodel-demo.vercel.app)  
+📦 **Demo repo:** [github.com/Mohit33222/biasmodel-demo](https://github.com/Mohit33222/biasmodel-demo)  
+📦 **Full project:** [github.com/SayanSantra-t/unbaised_AI](https://github.com/SayanSantra-t/unbaised_AI)
 
 ---
 
 ## Deploy in 5 minutes
 
-### 1. Backend â†’ Render (free)
+### 1. Backend → Render (free)
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-1. Go to [render.com](https://render.com) â†’ New Web Service
+1. Go to [render.com](https://render.com) → New Web Service
 2. Connect **github.com/Mohit33222/biasmodel-demo**, set **Root Directory** to `backend`
 3. Add env var: `GEMINI_API_KEY = your_key`
-4. Deploy â€” Render gives you a URL like `https://biasmodel-demo-api.onrender.com`
+4. Deploy — Render gives you a URL like `https://biasmodel-demo-api.onrender.com`
 
-### 2. Frontend â†’ Vercel
+### 2. Frontend → Vercel
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new)
 
 1. Import this repo on [vercel.com](https://vercel.com)
 2. Add env var: `VITE_API_URL = https://biasmodel-demo-api.onrender.com`
-3. Deploy â€” done!
+3. Deploy — done!
 
 ---
 
@@ -38,11 +38,11 @@
 | Auditor | Gemini 2.0 Flash | Gemma-3-4B (local) |
 | Meta-Auditor | Gemini 2.0 Flash | Gemma-3-4B (local) |
 | Supreme Auditor | Gemini 2.5 Flash | Gemini 2.5 Flash |
-| GPU required | âŒ None | âœ… Jan AI + local GPU |
-| API key needed | âœ… Gemini only | âœ… Gemini + Jan AI |
-| ChromaDB memory | âœ… Yes | âœ… Yes |
-| Batch CV upload | âœ… Yes | âœ… Yes |
-| All 3 domains | âœ… Yes | âœ… Yes |
+| GPU required | ❌ None | ✅ Jan AI + local GPU |
+| API key needed | ✅ Gemini only | ✅ Gemini + Jan AI |
+| ChromaDB memory | ✅ Yes | ✅ Yes |
+| Batch CV upload | ✅ Yes | ✅ Yes |
+| All 3 domains | ✅ Yes | ✅ Yes |
 
 ---
 
